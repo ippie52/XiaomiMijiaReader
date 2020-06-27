@@ -108,6 +108,7 @@ class Reader:
 
 TEMP_HUM_DEV_ADDR_START = "A4:C1:38"
 TEMP_HUM_DEV_NAME       = "LYWSD03MMC"
+SETTINGS_FILENAME       = "settings.json"
 
 def save_settings(settings, filename):
     """
@@ -129,12 +130,13 @@ def load_settings(filename):
     # Create some defaults
     settings = {
         'interval': {
-            'mins': 1, 'secs': 0
+            'mins': 2, 'secs': 30
         },
         'sensor file': 'sensors.json',
         'save id': 0,
         'scan seconds': 5,
-        'max attempts': 3
+        'max attempts': 3,
+        'next scan': datetime.now().isoformat()
     }
     loaded = False
     if path.isfile(filename):
@@ -221,7 +223,6 @@ def update_histories(device, new_reading):
         try:
             with open(device['history_file'], 'r') as f:
                 history_json = f.read()
-                print(history_json)
                 history = loads(history_json) if len(history_json) else {}
         except Exception as e:
             print("Failed to open history file.")
@@ -276,23 +277,21 @@ def gather_readings(devices, max_attempts):
     return devices
 
 # Load default or saves settings
-settings = load_settings('settings.json')
+settings = load_settings(SETTINGS_FILENAME)
 
 # Load existing devices from json
 x_devices = load_devices_from_persistent(settings['sensor file'])
 print(f"Devices from storage: {x_devices}")
-
 
 # Set the scanning intervals
 interval = timedelta(
     minutes=settings['interval']['mins'],
     seconds=settings['interval']['secs'])
 print(f"DEBUG: Interval: {interval}")
-next_scan = datetime.now()
+next_scan = datetime.fromisoformat(settings['next scan'])
 
 while True:
     if datetime.now() > next_scan:
-        next_scan = next_scan + interval
         print("Scanning for new devices...")
 
         # Load any newly discovered devices
@@ -306,6 +305,9 @@ while True:
         x_devices = gather_readings(x_devices, settings['max attempts'])
         # Save the updated readings
         save_devices_to_persistent(x_devices, settings['sensor file'])
+        next_scan = next_scan + interval
+        settings['next scan'] = next_scan.isoformat()
+        save_settings(settings, SETTINGS_FILENAME)
         print("Done for now.")
     else:
         sleep(1)
