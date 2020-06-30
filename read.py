@@ -116,11 +116,12 @@ def save_settings(settings, filename):
     """
     if isinstance(settings, dict):
         settings['save id'] += 1
-        settings = dumps(settings, sort_keys=True, indent=4)
+        settings_json = dumps(settings, sort_keys=True, indent=4)
     else:
         raise Exception("Settings must be provided as a dictionary.")
     with open(filename, 'w') as f:
-        f.write(settings)
+        f.write(settings_json)
+        print(f"Settings saved with index {settings['save id']}")
 
 
 def load_settings(filename):
@@ -287,8 +288,12 @@ print(f"Devices from storage: {x_devices}")
 interval = timedelta(
     minutes=settings['interval']['mins'],
     seconds=settings['interval']['secs'])
-print(f"DEBUG: Interval: {interval}")
+
+# Prevent checking again too soon, but don't create a backlog
 next_scan = datetime.fromisoformat(settings['next scan'])
+if datetime.now() > next_scan:
+    next_scan = datetime.now()
+
 
 while True:
     if datetime.now() > next_scan:
