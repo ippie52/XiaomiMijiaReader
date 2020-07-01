@@ -60,7 +60,7 @@ class SensorServer:
         self._devices = SensorServer.load_devices(self._settings['sensor_file'])
 
         self._loop.create_task(self.gather_readings())
-        self._loop.create_task(self.receive_messages())
+        # self._loop.create_task(self.receive_messages())
         self._server = websockets.serve(self.new_client, self._addr, self._port)
 
     async def receive_messages(self):
@@ -357,8 +357,6 @@ class SensorServer:
             stdout=asyncio.subprocess.PIPE
         )
         try:
-            # print(args)
-            # print("Waiting for the process...")
             data = await asyncio.wait_for(
                 proc.communicate(),
                 timeout=180
@@ -368,32 +366,6 @@ class SensorServer:
 
         if proc.returncode == 0:
             x_devices = loads(data[0])
-
-        # print('Moving on...')
-
-
-        # service = DiscoveryService()
-        # devices = service.discover(duration)
-        # print(f"Scanning found {len(devices)} devices.")
-        # for addr, name in devices.items():
-        #     if addr[:len(Constants.TEMP_HUM_DEV_ADDR_START)] == Constants.TEMP_HUM_DEV_ADDR_START or \
-        #         name == Constants.TEMP_HUM_DEV_NAME:
-        #         if addr not in existing:
-        #             device = {
-        #                 'dev_name': name,
-        #                 'addr': addr,
-        #                 'sensor_name': "Sensor %02d" % next_index,
-        #                 'history_file': f'sensor_{addr.replace(":", "")}_history.json',
-        #                 'active': True,
-        #                 'last_reading': None
-        #             }
-        #             next_index += 1
-        #             print(f"Found new device: {name}: {addr}")
-        #             x_devices[addr] = device
-        # if len(x_devices):
-        #     print(f"Only {len(x_devices)} were new")
-        # else:
-        #     print("None were new")
 
         print('--------------------------')
         print(x_devices)
@@ -475,76 +447,76 @@ class SensorServer:
             attempts = 0
             readings_complete = False
             while attempts < max_attempts and not readings_complete:
+                attempts += 1
+                result = ExitCodes.OK
                 try:
-
-
-                    # args = f'-d={duration}'
-                    # if len(existing):
-                    #     args += f' -e={" ".join(existing)}'
-                    # print('\033[92m', args, '\u001b[0m')
-                    # print("Here's the executable: ", sys.executable)
-                    # print(args)
-                    # proc = await asyncio.create_subprocess_exec(
-                    #     # sys.executable,
-                    #     './find_new_xdevices.py',
-                    #     args,
-                    #     # stdout=asyncio.subprocess.PIPE,
-                    #     # stderr=asyncio.subprocess.PIPE
-                    # )
-                    # try:
-                    #     print("Waiting for the process...")
-                    #     data = await asyncio.wait_for(proc.communicate(), timeout=180)
-                    # except asyncio.TimeoutError:
-                    #     print("Finding devices timed out")
-                    # print("Process complete!")
+                    print(f"Attempting to read from sensor {device['sensor_name']}...")
                     proc = await asyncio.create_subprocess_exec(
                         './get_sensor_data.py',
                         device['addr'],
-                        stdout=asyncio.subprocess.PIPE,
-                        stderr=asyncio.subprocess.PIPE,
+                        stdout=asyncio.subprocess.PIPE
                     )
-                    try:
-                        print("Waiting for process...")
-                        data = await asyncio.wait_for(
-                            proc.communicate(),
-                            timeout=180
-                        )
-                        print('Data -> ', data)
-                        print('Return code -> ', proc.returncode)
-                    except Exception as e:
-                        print("Bugger!")
-                        raise e
+                    reading = await asyncio.wait_for(
+                        proc.communicate(),
+                        timeout=180
+                    )
+                except concurrent.futures._base.TimeoutError:
+                    result = ExitCodes.USER_CANCELLED
+                except KeyboardInterrupt:
+                    result = ExitCodes.USER_CANCELLED
+                except TimeoutError:
+                    result = ExitCodes.TIMED_OUT
+                except Exception as e:
+                    raise e
 
-
-                    attempts += 1
-                    print(f"Attempting to read from sensor {device['sensor_name']}...")
-                    client = Lywsd02Client(device['addr'])
-                    reading = {
-                        'timestamp': datetime.now().isoformat(),
-                        'temperature': client.temperature,
-                        'humidity': client.humidity,
-                        'battery': client.battery
-                    }
+                if proc.returncode == ExitCodes.OK:
+                    print('Data -> ', reading)
+                    reading = loads(reading[0])
+                    print('Return code -> ', proc.returncode)
                     devices[addr]['last_reading'] = reading
                     SensorServer.update_histories(devices[addr], reading)
                     print(f"Device {device['sensor_name']} ({device['addr']}) -> {dumps(reading, sort_keys=True, indent=4)}")
                     readings_complete = True
-                except KeyboardInterrupt:
+                elif proc.returncode == ExitCodes.INVALID_ARGS:
+                    raise RuntimeError('The script requires an address!')
+                elif proc.returncode == ExitCodes.USER_CANCELLED:
                     print("User cancelled scan.")
                     readings_complete = True
-
-                except TimeoutError:
+                elif proc.returncode == ExitCodes.TIMED_OUT:
                     print(f"Data wasn't sent ({attempts}/{max_attempts})")
-
-                except BTLEDisconnectError:
+                elif proc.returncode == ExitCodes.DISCONNECTED:
                     print(f"Failed to connect. Perhaps the device is busy elsewhere.")
-                    # Force an early end to the loop - Waiting for a connection is time consuming
+                    attempts = max_attempts
+                else:
+                    print("Unknown exception.")
                     attempts = max_attempts
 
-                except Exception as e:
-                    # print(e)
-                    # print(f"Failed to gather readings for {device['addr']}. Trying again...")
-                    raise e
+
+
+
+                # client = Lywsd02Client(device['addr'])
+                # reading = {
+                #     'timestamp': datetime.now().isoformat(),
+                #     'temperature': client.temperature,
+                #     'humidity': client.humidity,
+                #     'battery': client.battery
+                # }
+
+                # except KeyboardInterrupt:
+
+
+                # except TimeoutError:
+
+
+                # except BTLEDisconnectError:
+
+                #     # Force an early end to the loop - Waiting for a connection is time consuming
+
+
+                # except Exception as e:
+                #     # print(e)
+                #     # print(f"Failed to gather readings for {device['addr']}. Trying again...")
+                #     raise e
         return devices
 
     @staticmethod
